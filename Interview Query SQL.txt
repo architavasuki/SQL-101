@@ -1,0 +1,48 @@
+--------------------
+Department Expenses
+--------------------
+
+As part of the financial management in a large corporation, the CFO wants to review the expenses in all departments for the previous financial year (2022).
+
+Write a SQL query to calculate the total expenditure for each department in 2022. Additionally, for comparison purposes, return the average expense across all departments in 2022.
+
+Note: The output should include the department name, the total expense, and the average expense (rounded to 2 decimal places). The data should be sorted in descending order by total expenditure.
+
+Example:
+Input:
+
+departments table
+
+Column	Type
+id	INTEGER
+name	VARCHAR
+expenses table
+
+Column	Type
+id	INTEGER
+department_id	INTEGER
+amount	FLOAT
+date	DATE
+Output:
+
+Column	Type
+department_name	VARCHAR
+total_expense	FLOAT
+average_expense	FLOAT
+
+Solution :
+
+SELECT 
+    name as department_name, 
+    coalesce(sum(amount),0) as total_expense,
+    (select
+    coalesce(round(sum(amount)/count(distinct d.id),2),0)
+    FROM departments d
+    left join expenses e
+    on d.id = e.department_id and year(date) = 2022) 
+    as average_expense
+FROM departments d
+left join expenses e
+on d.id = e.department_id and year(date) = 2022
+group by 1
+order by 2 desc
