@@ -46,3 +46,434 @@ left join expenses e
 on d.id = e.department_id and year(date) = 2022
 group by 1
 order by 2 desc
+
+-----------------------
+Cumulative Distribution
+-----------------------
+
+Given the two tables, write a SQL query that creates a cumulative distribution of the number of comments per user. 
+Assume bin buckets class intervals of one.
+
+Example:
+
+Input:
+
+users table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+created_at	DATETIME
+neighborhood_id	INTEGER
+sex	VARCHAR
+comments table
+
+Columns	Type
+user_id	INTEGER
+body	VARCHAR
+created_at	DATETIME
+Output:
+
+Columns	Type
+frequency	INTEGER
+cum_total	FLOAT
+
+Solution (old):
+WITH hist AS (
+    SELECT users.id, COUNT(c.user_id) AS frequency
+    FROM users
+    LEFT JOIN comments as c
+        ON users.id = c.user_id
+    GROUP BY 1
+),
+
+freq AS (
+    SELECT frequency, COUNT(*) AS num_users
+    FROM hist
+    GROUP BY 1
+)
+
+SELECT f1.frequency, SUM(f2.num_users) AS cum_total
+FROM freq AS f1
+LEFT JOIN freq AS f2
+    ON f1.frequency >= f2.frequency
+GROUP BY 1
+
+Solution (new):
+-- freq of comments, total no of users
+
+-- data : join users (id) - comments (user_id)
+-- cte1 : get total number of comments per user
+-- query using cte1 : get the number of users per comment frequency
+
+with cte1 as (
+    select 
+        u.id, count(c.created_at) as comments_count
+    from users u
+    left join comments c 
+    -- inner join doesnt work if you also have to display users with 0 comments
+    on u.id = c.user_id 
+    group by 1
+)
+
+select 
+    sum(count(id)) over (order by comments_count) as cum_total, 
+    comments_count as frequency
+from cte1
+group by 2
+
+------------------
+Comments Histogram
+------------------
+
+Write a SQL query to create a histogram of the number of comments per user in the month of January 2020.
+
+Note: Assume bin buckets class intervals of one.
+Comments that were created outside of January 2020 should be counted in a “0” bucket
+
+Example:
+
+Input:
+
+users table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+created_at	DATETIME
+neighborhood_id	INTEGER
+mail	VARCHAR
+comments table
+
+Columns	Type
+user_id	INTEGER
+body	VARCHAR
+created_at	DATETIME
+Output:
+
+Column	Type
+comment_count	INTEGER
+frequency	INTEGER
+
+Solution:
+
+with cte1 as (
+  select 
+    u.id,
+    coalesce(sum(case when c.created_at >= '2020-01-01' and c.created_at < '2020-02-01' 
+        then 1 else 0 end), 0) as comment_count
+  from users u
+  left join comments c on u.id = c.user_id
+  group by 1
+)
+
+select 
+  comment_count,
+  count(*) as frequency
+from cte1
+group by 1
+order by 1
+
+----------------
+Annual Retention
+----------------
+
+You’re given a table called annual_payments for an annually billed B2B SAAS subscription product.
+
+annual_payments table
+
+Column	Type
+id	INTEGER
+status	VARCHAR
+user_id	INTEGER
+created_at	DATETIME
+amount	FLOAT
+amount_refunded	FLOAT
+product	VARCHAR
+last_updated	DATETIME
+
+Users pay for the three different products: 'PDF Editor', 'Cloud Storage', and 'Mobile CRM'.
+
+How would you formulate a query to calculate the average annual retention, for each subsequent year, at the end of the year?
+
+Retention rate is calculated as a percentage of active subscriptions at the end of the year T in the active subscriptions at the end of the previous year (T−1).
+
+Example 1:
+
+User 1 bought a subscript to PDF editor in 2019 for the first time and renewed their subscription in 2020. In 2021, they canceled their subscription. Retention rates should be calculated as:
+
+2019	2020	2021
+0.00	1.00	0.00
+Example 2:
+
+User 2 bought a subscription to 'PDF Editor' in 2019 for the first time, renewed their subscription in 2020, and canceled a few days later in 2020. Retention rates should be calculated as:
+
+2019	2020	2021
+0.00	0.00	0.00
+Notes:
+
+The status column may contain the values 'paid', 'refunded', or 'failed'.
+A 'failed' payment equates to a user canceling their subscription on the date the next payment is due.
+If a user refunds a successful payment, then the row gets updated, and the status becomes 'refunded'. The date of refund is recorded in last_updated.
+When a refund occurs in year T, the subscription is canceled. Users may purchase the same product again in the subsequent years, and it is considered a new purchase.
+
+Solution:
+
+-- cte to determine active subscriptions
+with active_subscriptions as (
+select 
+    user_id,
+    product,
+    extract(year from created_at) as year,
+    case 
+      when status = 'paid' and amount_refunded = 0 then 1
+      when status in ('failed', 'refunded') then 0
+      else 0
+    end as is_active
+  from annual_payments
+),
+
+-- cte to join current year's data with previous year's data
+-- using this instead of lag, although that could be used as well
+-- retention_data as (
+--   select
+--     a.year,
+--     a.product,
+--     a.user_id,
+--     a.is_active,
+--     coalesce(b.is_active, 0) as prev_year_active
+--   from active_subscriptions a
+--   left join active_subscriptions b
+--     on a.user_id = b.user_id
+--     and a.product = b.product
+--     and a.year = b.year + 1
+-- ),
+
+-- cte to get current year's data with previous year's data using lag
+retention_data as (
+  select
+    year,
+    product,
+    user_id,
+    is_active,
+    coalesce(lag(is_active) over (partition by user_id, product order by year), 0) as prev_year_active
+  from active_subscriptions
+),
+
+-- cte to calculate retention rates for each year
+retention_rates as (
+  select
+    year,
+    sum(case when is_active = 1 and prev_year_active = 1 then 1 else 0 end) as retained,
+    sum(prev_year_active) as prev_year_total,
+    -- case when for retained/prev_year_total
+    case 
+      when sum(prev_year_active) > 0 
+      then round(cast(sum(case when is_active = 1 and prev_year_active = 1 then 1 else 0 end) as float) / sum(prev_year_active), 2)
+      else 0 
+    end as percentage_renewed
+  from retention_data
+  group by year
+)
+
+-- final query to display the results
+select
+    percentage_renewed,
+    year
+from retention_rates
+
+-------------------------
+Rolling Bank Transactions
+-------------------------
+
+We’re given a table of bank transactions with three columns, user_id, a deposit or withdrawal value (determined if the value is positive or negative), and created_at time for each transaction.
+
+Write a query to get the total three-day rolling average for deposits by day.
+
+Note: Please use the format '%Y-%m-%d' for the date in the outout
+
+Example:
+
+Input:
+
+bank_transactions table
+
+Column	Type
+user_id	INTEGER
+created_at	DATETIME
+transaction_value	FLOAT
+Output:
+
+Column	Type
+dt	VARCHAR
+rolling_three_day	FLOAT
+
+Solution:
+
+-- cte to get the sum of deposits from a datetime to date level
+with daily_deposits as (
+select 
+    date(created_at) as dt, 
+    sum(transaction_value) as daily_deposit_value
+from bank_transactions
+where transaction_value>0
+group by 1
+)
+
+-- query to get the rolling avg transaction value for 3 days (current + prev 2 days) using window function
+select 
+    dt, 
+    avg(daily_deposit_value) over (
+        order by dt
+        rows between 2 preceding and current row
+    ) as rolling_three_day
+from daily_deposits
+order by 1
+
+-----------------
+Random SQL Sample
+-----------------
+
+Let’s say we have a table with an id and name fields. The table holds over 100 million rows and we want to sample a random row in the table without throttling the database.
+
+Write a query to randomly sample a row from this table.
+
+Input:
+
+big_table table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+
+Solution 1:
+
+select * 
+from big_table
+order by rand()
+limit 1
+
+cons: This works fast if you only have around 1000 rows. It might take a few seconds to run at 10K. 
+And then at 100K it takes a long time!
+
+------------------
+Top Three Salaries
+------------------
+
+Given the employees and departments table, write a query to get the top 3 highest employee salaries by department. If the department contains less that 3 employees, the top 2 or the top 1 highest salaries should be listed (assume that each department has at least 1 employee). 
+
+Note: The output should include the full name of the employee in one column, the department name, and the salary. The output should be sorted by department name in ascending order and salary in descending order. 
+
+Example:
+
+Input:
+
+employees table
+
+Column	Type
+id	INTEGER
+first_name	VARCHAR
+last_name	VARCHAR
+salary	INTEGER
+department_id	INTEGER
+departments table
+
+Column	Type
+id	INTEGER
+name	VARCHAR
+Output:
+
+Column	Type
+employee_name	VARCHAR
+department_name	VARCHAR
+salary	INTEGER
+
+Solution 1:
+
+with cte1 as (
+select employee_name, department_id, salary from (
+select 
+concat(first_name, " ", last_name) as employee_name, 
+department_id, 
+salary,
+rank() over (partition by department_id order by salary desc) as r
+from employees
+) t1
+where r<=3
+)
+
+select d.name as department_name, employee_name, salary
+from cte1 c
+left join departments d 
+on c.department_id = d.id
+order by 1, 3 desc
+
+Solution 2:
+with dept_salaries as (
+select 
+    concat(first_name, " ", last_name) as employee_name,
+    name as department_name,
+    salary,
+    dense_rank() over (partition by d.id order by salary desc) as r 
+from employees e
+inner join departments d
+on e.department_id = d.id
+)
+select 
+    employee_name,
+    department_name,
+    salary
+from dept_salaries
+where r<=3
+order by department_name, salary desc
+
+-----------------
+Payments Received
+-----------------
+
+You’re given two tables, payments and users. The payments table holds all payments between users with the payment_state column consisting of either "success" or "failed". 
+
+How many customers that signed up in January 2020 had a combined (successful) sending and receiving volume greater than $100 in their first 30 days?
+
+Note: The sender_id and recipient_id both represent the user_id.
+
+payments table
+
+Column	Type
+payment_id	INTEGER
+sender_id	INTEGER
+recipient_id	INTEGER
+created_at	DATETIME
+payment_state	VARCHAR
+amount_cents	INTEGER
+users table
+
+Column	Type
+id	INTEGER
+created_at	DATETIME
+Output:
+
+Column	Type
+num_customers	INTEGER
+
+Solution:
+
+-- this cte calculates the total volume in dollars for each user who signed up in January 2020
+with user_volumes as (
+  select 
+    u.id as user_id,
+    sum(amount_cents)/100.0 as volume_dollars
+  from users u
+  join payments p on (u.id = p.sender_id or u.id = p.recipient_id)
+  where u.created_at >= '2020-01-01' and u.created_at < '2020-02-01'
+    and p.created_at >= u.created_at 
+    and p.created_at < date_add(u.created_at, interval 30 day)
+    and p.payment_state = 'success'
+  group by u.id
+)
+
+-- count the number of users with total volume exceeding $100
+select 
+    count(*) as num_customers 
+from user_volumes
+where volume_dollars > 100
