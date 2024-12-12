@@ -477,3 +477,249 @@ select
     count(*) as num_customers 
 from user_volumes
 where volume_dollars > 100
+
+-----------------
+Employee Salaries
+-----------------
+
+Given a employees and departments table, select the top 3 departments with at least ten employees and rank them according to the percentage of their employees making over 100K in salary.
+
+Example:
+
+Input:
+
+employees table
+
+Columns	Type
+id	INTEGER
+first_name	VARCHAR
+last_name	VARCHAR
+salary	INTEGER
+department_id	INTEGER
+departments table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+Output:
+
+Column	Type
+percentage_over_100k	FLOAT
+department_name	VARCHAR
+number_of_employees	INTEGER
+
+Solution (old):
+
+with cte1 as (
+    select department_id, 
+    count(distinct id) as number_of_employees 
+    from employees
+    group by 1
+    having count(distinct id) >=10
+), 
+cte2 as (
+    select department_id, 
+    sum(salary_flag) as salary_gt_100000 from(
+    select department_id, 
+    id, 
+    salary,
+    case when salary > 100000 then 1 else 0 end as salary_flag
+    from employees
+    group by 1,2,3
+) t1
+group by 1
+)
+
+select 
+d.name as department_name,
+number_of_employees,
+salary_gt_100000/number_of_employees as percentage_over_100k
+from cte2
+inner join cte1 on cte2.department_id = cte1.department_id
+left join departments d on cte2.department_id = d.id
+
+Solution (new):
+
+-- cte1 - select departments with # employees >=10
+-- get % of employees making over 100k
+
+select 
+    d.name as department_name,
+    count(distinct e.id) as number_of_employees,
+    sum(case when salary>100000 then 1 else 0 end)/count(distinct e.id) as percentage_over_100k
+from employees e
+inner join departments d
+on e.department_id = d.id
+group by 1
+having count(distinct e.id)>=10
+order by 3
+
+--------------------
+Subscription Overlap
+--------------------
+Given a table of product subscriptions with a subscription start date and end date for each user, write a query that returns true or false whether or not each user has a subscription date range that overlaps with any other completed subscription.
+
+Completed subscriptions have end_date recorded.
+
+Example:
+
+Input:
+
+subscriptions table
+
+Column	Type
+user_id	INTEGER
+start_date	DATETIME
+end_date	DATETIME
+user_id	start_date	end_date
+1	2019-01-01	2019-01-31
+2	2019-01-15	2019-01-17
+3	2019-01-29	2019-02-04
+4	2019-02-05	2019-02-10
+Output:
+
+user_id	overlap
+1	1
+2	1
+3	1
+4	0
+
+Solution:
+
+-- get the users with complete subscriptions
+-- compare min and max start date of each column
+
+select user_id, 
+       case when overlap_count > 0 then 1 else 0 end as overlap
+from (
+    select user_id,
+           (select count(*) 
+            from subscriptions s2
+            where s1.user_id != s2.user_id
+              and s1.start_date <= s2.end_date
+              and s1.end_date >= s2.start_date
+              and s2.end_date is not null) as overlap_count
+    from subscriptions s1
+    where s1.end_date is not null
+) t1
+order by user_id
+
+-----------------------------
+Employee Salaries (ETL Error)
+-----------------------------
+https://www.interviewquery.com/questions/employee-salaries-etl-error
+
+Let’s say we have a table representing a company payroll schema.
+
+Due to an ETL error, the employees table, instead of updating the salaries every year when doing compensation adjustments, did an insert instead. The head of HR still needs the current salary of each employee.
+
+Write a query to get the current salary for each employee.
+
+Note: Assume no duplicate combination of first and last names (I.E. No two John Smiths). Assume the INSERT operation works with ID autoincrement.
+
+Example:
+
+Input:
+
+employees table
+
+Column	Type
+id	VARCHAR
+first_name	VARCHAR
+last_name	VARCHAR
+salary	INTEGER
+department_id	INTEGER
+Output:
+
+Column	Types
+first_name	VARCHAR
+last_name	VARCHAR
+salary	INTEGER
+
+Solution:
+
+select first_name, last_name, salary 
+from (
+select *, rank() over (partition by concat(first_name,last_name) order by id desc) as r
+from employees
+) t1
+where r = 1
+
+---------------
+Customer Orders
+---------------
+
+Write a query to identify customers who placed more than three transactions each in both 2019 and 2020.
+
+Example:
+
+Input:
+
+transactions table
+
+Column	Type
+id	INTEGER
+user_id	INTEGER
+created_at	DATETIME
+product_id	INTEGER
+quantity	INTEGER
+users table
+
+Column	Type
+id	INTEGER
+name	VARCHAR
+  Output:
+
+Column	Type
+customer_name	VARCHAR
+
+Solution:
+
+select 
+    u.name as customer_name
+from transactions t
+inner join users u
+on t.user_id = u.id
+where year(created_at) in (2019,2020)
+group by 1
+having sum(case when year(created_at) = 2019 then 1 else 0 end) > 3 and 
+sum(case when year(created_at) = 2020 then 1 else 0 end) > 3
+
+-------------------
+Empty Neighborhoods
+-------------------
+We’re given two tables, a users table with demographic information and the neighborhood they live in and a neighborhoods table.
+
+Write a query that returns all neighborhoods that have 0 users. 
+
+Example:
+
+Input:
+
+users table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+neighborhood_id	INTEGER
+created_at	DATETIME
+neighborhoods table
+
+Columns	Type
+id	INTEGER
+name	VARCHAR
+city_id	INTEGER
+Output:
+
+Columns	Type
+name	VARCHAR
+
+Solution:
+
+select  
+    n.name as name
+from neighborhoods n
+left join users u 
+on n.id = u.neighborhood_id
+group by 1
+having count(u.id) = 0 
