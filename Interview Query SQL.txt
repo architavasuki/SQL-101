@@ -688,6 +688,7 @@ sum(case when year(created_at) = 2020 then 1 else 0 end) > 3
 -------------------
 Empty Neighborhoods
 -------------------
+
 We’re given two tables, a users table with demographic information and the neighborhood they live in and a neighborhoods table.
 
 Write a query that returns all neighborhoods that have 0 users. 
@@ -723,3 +724,107 @@ left join users u
 on n.id = u.neighborhood_id
 group by 1
 having count(u.id) = 0 
+
+--------------
+Download Facts
+--------------
+
+iven two tables: accounts, and downloads, find the average number of downloads for free vs paying accounts, broken down by day.
+
+Note: You only need to consider accounts that have had at least one download before when calculating the average.
+
+Note: round average_downloads to 2 decimal places.
+
+Example:
+
+Input:
+
+accounts table
+
+Column	Type
+account_id	INTEGER
+paying_customer	BOOLEAN
+downloads table
+
+column	type
+account_id	INTEGER
+download_date	DATETIME
+downloads	INTEGER
+Output:
+
+Column	Type
+download_date	DATETIME
+paying_customer	BOOLEAN
+average_downloads	FLOAT
+
+Solution:
+
+select 
+    download_date, 
+    paying_customer, 
+    avg(downloads) as average_downloads
+from accounts a
+inner join downloads d
+on a.account_id = d.account_id
+group by 1,2
+
+------------------
+Closest SAT Scores
+------------------
+
+Given a table of students and their SAT test scores, write a query to return the two students with the closest test scores with the score difference.
+
+If there are multiple students with the same minimum score difference, select the student name combination that is higher in the alphabet. 
+
+Example:
+
+Input:
+
+scores table
+
+Column	Type
+id	INTEGER
+student	VARCHAR
+score	INTEGER
+Output:
+
+Column	Type
+one_student	VARCHAR
+other_student	VARCHAR
+score_diff	INTEGER
+
+Solution (old):
+
+with score_diff as (
+select 
+    case when s1.student < s2.student then s1.student else s2.student end as one_student,
+    case when s1.student < s2.student then s2.student else s1.student end as other_student,
+    abs(s1.score - s2.score) as score_diff,
+    row_number() over (order by abs(s1.score - s2.score), 
+                       greatest(s1.student, s2.student), 
+                       least(s1.student, s2.student)) as rn
+from 
+  scores s1
+  join 
+  scores s2 on s1.id < s2.id
+)
+select 
+  one_student,
+  other_student,
+  score_diff
+from 
+  score_diff
+where 
+  rn = 1
+
+Solution (new):
+
+select 
+  s1.student as one_student,
+  s2.student as other_student,
+  abs(s1.score-s2.score) as score_diff
+from scores s1
+inner join scores s2
+on s1.id < s2.id
+order by 3,1,2
+limit 1
