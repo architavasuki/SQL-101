@@ -714,3 +714,110 @@ on p.bear_id = m.bear_id
 where date between '2024-12-01' and '2024-12-31'
 group by 1
 order by 2 desc
+
+-----------------------------
+Day 20 of SQL Advent Calendar
+-----------------------------
+
+Today's Question:
+
+We are looking for cheap gifts at the market. Which vendors are selling items priced below $10? List the unique (i.e. remove duplicates) vendor names.
+
+Table name: vendors
+
+vendor_id	vendor_name	market_location
+1	Cozy Crafts	Downtown Square
+2	Sweet Treats	Central Park
+3	Winter Warmers	Downtown Square
+Table name: item_prices
+
+item_id	vendor_id	item_name	price_usd
+1	1	Knitted Scarf	25
+2	2	Hot Chocolate	5
+3	2	Gingerbread Cookie	3.5
+4	3	Wool Hat	18
+5	3	Santa Pin	2
+
+Question level of difficulty:
+Easy
+
+Solution:
+
+select
+    distinct vendor_name
+from vendors v
+inner join item_prices i 
+on v.vendor_id = i.vendor_id
+where price_usd<10
+
+-----------------------------
+Day 21 of SQL Advent Calendar
+-----------------------------
+
+Today's Question:
+
+Santa needs to optimize his sleigh for Christmas deliveries. Write a query to calculate the total weight of gifts for each recipient type (good or naughty) and determine what percentage of the total weight is allocated to each type. Include the recipient_type, total_weight, and weight_percentage in the result.
+
+Table name: gifts
+
+gift_id	gift_name	recipient_type	weight_kg
+1	Toy Train	good	2.5
+2	Lumps of Coal	naughty	1.5
+3	Teddy Bear	good	1.2
+4	Chocolate Bar	good	0.3
+5	Board Game	naughty	1.8
+
+Question level of difficulty:
+Hard
+
+Solution:
+
+with recipient_type_weight as (
+select 
+   recipient_type,
+   sum(weight_kg) as total_weight
+from gifts
+group by 1
+)
+select 
+    recipient_type, 
+    total_weight, 
+    round(total_weight*100.0/(select sum(weight_kg) from gifts),2) as weight_percentage
+from recipient_type_weight
+
+-----------------------------
+Day 22 of SQL Advent Calendar
+-----------------------------
+
+Today's Question:
+
+We are hosting a gift party and need to ensure every guest receives a gift. Using the guests and guest_gifts tables, write a query to identify the guest(s) who have not been assigned a gift (i.e. they are not listed in the guest_gifts table).
+
+Table name: guests
+
+guest_id	guest_name
+1	Cindy Lou
+2	The Grinch
+3	Max the Dog
+4	Mayor May Who
+Table name: guest_gifts
+
+gift_id	guest_id	gift_name
+1	1	Toy Train
+2	1	Plush Bear
+3	2	Bag of Coal
+4	2	Sleigh Bell
+5	3	Dog Treats
+
+Question level of difficulty:
+Medium
+
+Solution:
+
+select 
+    guest_name
+from guests
+where guest_id not in (
+    select guest_id from guest_gifts
+)
+
